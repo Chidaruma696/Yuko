@@ -427,6 +427,7 @@ fun Cover(url: String?, source: LoadedSource?, modifier: Modifier = Modifier) {
 					val headers = NetworkHeaders.Builder()
 					source?.homeUrl?.takeIf { it.isNotBlank() }?.let { headers.set("Referer", it) }
 					headers.set("User-Agent", SourcesRuntime.userAgent)
+					source?.let { headers.set(com.yuko.app.SourceTaggingCallFactory.HEADER, it.id) }
 					httpHeaders(headers.build())
 				}.build()
 			}

@@ -29,7 +29,7 @@ class YukoApp : Application(), SingletonImageLoader.Factory {
 	override fun newImageLoader(context: coil3.PlatformContext): ImageLoader =
 		ImageLoader.Builder(context)
 			.components {
-				add(OkHttpNetworkFetcherFactory(callFactory = { SourcesRuntime.client }))
+				add(OkHttpNetworkFetcherFactory(callFactory = { SourceTaggingCallFactory }))
 			}
 			.crossfade(true)
 			.build()
@@ -37,5 +37,23 @@ class YukoApp : Application(), SingletonImageLoader.Factory {
 	companion object {
 		lateinit var instance: YukoApp
 			private set
+	}
+}
+
+/**
+ * Coil cannot tag OkHttp requests, so image requests carry the source in a private header;
+ * here it becomes the [MangaSource] tag, which makes the parser add the headers (referer,
+ * user agent, cookies) and the image fixes its site needs.
+ */
+object SourceTaggingCallFactory : okhttp3.Call.Factory {
+	const val HEADER = "X-Yuko-Source"
+
+	override fun newCall(request: okhttp3.Request): okhttp3.Call {
+		val sourceId = request.header(HEADER)
+		val source = sourceId?.let { runCatching { org.koitharu.kotatsu.parsers.model.MangaParserSource.valueOf(it) }.getOrNull() }
+		val cleaned = request.newBuilder().removeHeader(HEADER).apply {
+			if (source != null) tag(org.koitharu.kotatsu.parsers.model.MangaSource::class.java, source)
+		}.build()
+		return SourcesRuntime.client.newCall(cleaned)
 	}
 }

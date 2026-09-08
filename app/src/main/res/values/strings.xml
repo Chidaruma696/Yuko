@@ -95,4 +95,10 @@
 	<string name="credit_source_code_summary">Open source under Apache 2.0. Support the official manga industry.</string>
 	<string name="merging_sources">Looking for more chapters in the other sources…</string>
 	<string name="completed_with">Completed with: %1$s</string>
+	<string name="servers">Servers</string>
+	<string name="other_servers">Other servers</string>
+	<string name="current_server">current</string>
+	<string name="search_more_sources">Search in more sources</string>
+	<string name="no_alternates">No other source has this chapter yet. Try a deeper search.</string>
+	<string name="page_failed">This page did not load from this server.</string>
 </resources>

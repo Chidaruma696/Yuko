@@ -40,11 +40,11 @@ object ChapterMerge {
 	fun normalizeTitle(s: String): String = Genres.normalize(s).replace(Regex("[^a-z0-9]+"), " ").trim()
 
 	/** Finds the same title in the other enabled sources and returns their chapter lists. */
-	suspend fun findElsewhere(primary: LoadedSource, manga: MangaRef): List<Pair<LoadedSource, List<ChapterRef>>> = withContext(Dispatchers.IO) {
+	suspend fun findElsewhere(primary: LoadedSource, manga: MangaRef, onlyEnabled: Boolean = true): List<Pair<LoadedSource, List<ChapterRef>>> = withContext(Dispatchers.IO) {
 		val wanted = normalizeTitle(manga.title)
 		if (wanted.length < 3) return@withContext emptyList()
 		val enabled = SourcePrefs.enabledIds()
-		val candidates = MangaSources.all.filter { it.id != primary.id && it.id in enabled && (AppPrefs.showAdult || !it.isNsfw) }
+		val candidates = MangaSources.all.filter { it.id != primary.id && (!onlyEnabled || it.id in enabled) && (AppPrefs.showAdult || !it.isNsfw) }
 		coroutineScope {
 			candidates.map { src ->
 				async {
