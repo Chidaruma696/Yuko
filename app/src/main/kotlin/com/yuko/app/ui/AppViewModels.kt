@@ -98,6 +98,11 @@ data class DetailsState(
 	val branches: List<String> = emptyList(),
 	val isLoading: Boolean = false,
 	val error: String? = null,
+	/** Other copies of each chapter (by merge key) in other sources, for fallback. */
+	val alternates: Map<String, List<ChapterRef>> = emptyMap(),
+	/** Sources besides the manga's own that contributed chapters. */
+	val extraSources: List<String> = emptyList(),
+	val isMerging: Boolean = false,
 )
 
 /** Manga page: details and the chapter list. Chapters are kept oldest first. */
@@ -111,22 +116,38 @@ class DetailsViewModel : ViewModel() {
 		this.source = source
 		state.value = DetailsState(manga = manga, isLoading = true)
 		viewModelScope.launch {
+			var primary: List<ChapterRef> = emptyList()
+			var current = manga
 			try {
 				val details = withContext(Dispatchers.IO) { source.parser.getDetails(manga.toManga()) }
 				val chapters = details.chapters.orEmpty()
 				val branches = chapters.mapNotNull { it.branch }.distinct()
-				state.update {
-					it.copy(
-						manga = details.toRef().let { ref -> if (ref.coverUrl.isNullOrBlank()) ref.copy(coverUrl = manga.coverUrl) else ref },
-						chapters = chapters.map { c -> c.toRef() }.sortedWith(compareBy({ it.volume }, { it.number })),
-						branches = branches,
-						isLoading = false,
-					)
-				}
+				current = details.toRef().let { ref -> if (ref.coverUrl.isNullOrBlank()) ref.copy(coverUrl = manga.coverUrl) else ref }
+				primary = chapters.map { c -> c.toRef() }.sortedWith(compareBy({ it.volume }, { it.number }))
+				state.update { it.copy(manga = current, chapters = primary, branches = branches, isLoading = false) }
 			} catch (e: kotlinx.coroutines.CancellationException) {
 				throw e
 			} catch (e: Throwable) {
+				// the manga's own source failed: other sources may still have it
 				state.update { it.copy(isLoading = false, error = e.message ?: e.javaClass.simpleName) }
+			}
+			// complete the list with the same title in the other enabled sources
+			state.update { it.copy(isMerging = true) }
+			val others = runCatching { ChapterMerge.findElsewhere(source, current) }.getOrDefault(emptyList())
+			if (state.value.manga?.id != manga.id) return@launch
+			if (others.isNotEmpty()) {
+				val merged = ChapterMerge.merge(primary, others)
+				state.update {
+					it.copy(
+						chapters = merged.chapters,
+						alternates = merged.alternates,
+						extraSources = merged.extraSources,
+						error = if (merged.chapters.isNotEmpty()) null else it.error,
+						isMerging = false,
+					)
+				}
+			} else {
+				state.update { it.copy(isMerging = false) }
 			}
 		}
 	}

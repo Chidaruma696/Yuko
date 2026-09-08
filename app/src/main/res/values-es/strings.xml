@@ -91,4 +91,6 @@
 	<string name="credit_licenses_summary">Cada biblioteca y su licencia</string>
 	<string name="credit_source_code">Código fuente</string>
 	<string name="credit_source_code_summary">Código abierto bajo Apache 2.0. Apoya a la industria oficial del manga.</string>
+	<string name="merging_sources">Buscando más capítulos en las otras fuentes…</string>
+	<string name="completed_with">Completado con: %1$s</string>
 </resources>
