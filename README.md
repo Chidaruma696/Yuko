@@ -15,6 +15,10 @@
 
 <br/>
 
+[![Descargar APK](https://img.shields.io/github/v/release/Chidaruma696/Yuko?label=%F0%9F%93%B2%20DESCARGAR%20APK&style=for-the-badge&color=7a1f2b)](https://github.com/Chidaruma696/Yuko/releases/latest)
+
+<br/>
+
 *Más de 70 fuentes en español compiladas dentro de la app · sin extensiones · sin anuncios · sin rastreo*
 
 </div>
@@ -24,6 +28,16 @@
 > [!IMPORTANT]
 > **Yuko no aloja, sube ni distribuye ningún manga.** Solo lee sitios públicos de terceros, igual que un navegador.
 > Si el manga que lees se vende en tu país, cómpralo. Este proyecto existe por una carencia, no como sustituto. Lee [por qué existe](#-por-qué-existe-yuko) y [cómo apoyar al manga](#-apoya-al-manga-de-verdad).
+
+<br/>
+
+## 📲 Descargar
+
+1. Entra en la [última versión](https://github.com/Chidaruma696/Yuko/releases/latest) y baja el archivo `Yuko-x.y.z.apk`.
+2. Ábrelo en el móvil. Android te pedirá permiso para instalar apps de esta fuente; acéptalo una vez.
+3. Listo. Las siguientes versiones se instalan encima sin perder biblioteca ni descargas.
+
+Yuko no está en Play Store ni va a estarlo; se distribuye solo desde aquí. Y mientras Android siga siendo abierto, con eso basta ([por qué importa](#-keep-android-open)).
 
 <br/>
 
