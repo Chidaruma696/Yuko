@@ -1,9 +1,18 @@
+import java.util.Properties
+
 plugins {
 	alias(libs.plugins.android.application)
 	alias(libs.plugins.kotlin.android)
 	alias(libs.plugins.kotlin.serialization)
 	alias(libs.plugins.compose.compiler)
 }
+
+// Release signing comes from local.properties (never committed):
+//   keystore.file=keystore.jks  keystore.password=...  keystore.alias=...  keystore.keyPassword=...
+val localProperties = Properties().apply {
+	rootProject.file("local.properties").takeIf { it.exists() }?.inputStream()?.use { load(it) }
+}
+val hasReleaseKey = localProperties.getProperty("keystore.file")?.let { rootProject.file(it).exists() } == true
 
 android {
 	namespace = "com.yuko.app"
@@ -17,6 +26,17 @@ android {
 		versionName = "0.1.0"
 	}
 
+	signingConfigs {
+		if (hasReleaseKey) {
+			create("release") {
+				storeFile = rootProject.file(localProperties.getProperty("keystore.file"))
+				storePassword = localProperties.getProperty("keystore.password")
+				keyAlias = localProperties.getProperty("keystore.alias")
+				keyPassword = localProperties.getProperty("keystore.keyPassword")
+			}
+		}
+	}
+
 	buildTypes {
 		debug {
 			applicationIdSuffix = ".debug"
@@ -25,6 +45,7 @@ android {
 			isMinifyEnabled = true
 			isShrinkResources = true
 			proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+			signingConfig = if (hasReleaseKey) signingConfigs.getByName("release") else signingConfigs.getByName("debug")
 		}
 	}
 
