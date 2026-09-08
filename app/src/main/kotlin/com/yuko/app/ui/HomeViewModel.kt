@@ -112,9 +112,10 @@ class HomeViewModel : ViewModel() {
 			val rows = results.filter { it.second.isNotEmpty() }.map { (src, popular, _) ->
 				FeedRow(title = "Populares en ${src.name}", kicker = "人気", items = popular.take(20).map { FeedManga(it, src) }, source = src)
 			}
-			val latest = interleave(results.map { (src, _, latest) -> latest.map { FeedManga(it, src) } }).take(30)
+			val latest = interleave(results.map { (src, _, latest) -> latest.map { FeedManga(it, src) } }).distinctBy { ChapterMerge.normalizeTitle(it.manga.title) }.take(30)
 			val pool = results.flatMap { (src, popular, latest) -> (popular + latest).map { FeedManga(it, src) } }
-				.distinctBy { it.manga.title.lowercase() }
+				.filter { !it.manga.coverUrl.isNullOrBlank() }
+				.distinctBy { ChapterMerge.normalizeTitle(it.manga.title) }
 			val wanted = AppPrefs.selectedGenres
 			val matching = if (wanted.isEmpty()) emptyList() else pool.filter { fm -> Genres.of(fm.manga.tags.map { it.title }).any { it in wanted } }
 			val recommended = (matching.shuffled(random) + pool.shuffled(random)).distinctBy { it.key }.take(12)

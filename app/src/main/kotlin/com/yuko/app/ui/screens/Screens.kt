@@ -85,6 +85,7 @@ import com.yuko.app.ui.komi.LocalPersonality
 import com.yuko.app.ui.komi.screentoneFill
 import com.yuko.sources.LoadedSource
 import com.yuko.sources.MangaRef
+import com.yuko.sources.MangaSources
 import com.yuko.sources.SourcesRuntime
 import com.yuko.sources.toRef
 import org.koitharu.kotatsu.parsers.model.MangaState
@@ -250,7 +251,7 @@ fun DetailsScreen(source: LoadedSource, manga: MangaRef, onBack: () -> Unit) {
 	var newestFirst by rememberSaveable { mutableStateOf(true) }
 	val chapters = if (newestFirst) state.chapters.asReversed() else state.chapters
 
-	fun read(index: Int) = ReaderActivity.start(context, details, state.chapters, index)
+	fun read(index: Int) = ReaderActivity.start(context, details, state.chapters, index, state.alternates)
 
 	KomiScaffold(
 		topBar = {
@@ -319,6 +320,14 @@ fun DetailsScreen(source: LoadedSource, manga: MangaRef, onBack: () -> Unit) {
 					KomiButton(onClick = { read(target) }, label = label, emphasized = true, fullWidth = true)
 				}
 			}
+			if (state.isMerging || state.extraSources.isNotEmpty()) {
+				item {
+					KomiText(
+						text = if (state.isMerging) stringResource(R.string.merging_sources) else stringResource(R.string.completed_with, state.extraSources.joinToString(", ")),
+						role = KomiTextRole.Label, color = colors.onSurfaceVariant, uppercase = false, fontSize = 11.sp,
+					)
+				}
+			}
 			item {
 				KomiSectionHead(
 					label = "${state.chapters.size} ${stringResource(R.string.chapters)}", kicker = "話",
@@ -328,7 +337,7 @@ fun DetailsScreen(source: LoadedSource, manga: MangaRef, onBack: () -> Unit) {
 								KomiButton(onClick = { newestFirst = !newestFirst }, label = if (newestFirst) "↓" else "↑", size = KomiButtonSize.Sm, variant = KomiButtonVariant.Text)
 								KomiButton(
 									onClick = {
-										val queued = state.chapters.count { ch -> DownloadRepository.enqueue(source, details, ch) != null }
+										val queued = state.chapters.count { ch -> DownloadRepository.enqueue(MangaSources.byId(ch.sourceId) ?: source, details, ch) != null }
 										if (queued > 0) DownloadService.start(context)
 										Toast.makeText(context, context.getString(R.string.download_all_queued, queued), Toast.LENGTH_SHORT).show()
 									},
@@ -347,14 +356,19 @@ fun DetailsScreen(source: LoadedSource, manga: MangaRef, onBack: () -> Unit) {
 						KomiButton(onClick = { vm.retry() }, label = stringResource(R.string.retry), variant = KomiButtonVariant.Outline)
 					}
 				}
-				state.chapters.isEmpty() -> item {
+				state.chapters.isEmpty() && !state.isMerging -> item {
 					KomiText(text = stringResource(R.string.no_chapters), role = KomiTextRole.Body, color = colors.onSurfaceVariant, uppercase = false, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(16.dp))
 				}
 				else -> item {
 					KomiListContainer {
 						chapters.forEachIndexed { index, ch ->
 							val isRead = ch.id in readSet
-							val subtitleParts = listOfNotNull(ch.scanlator?.takeIf { it.isNotBlank() }, ch.branch?.takeIf { state.branches.size > 1 })
+							val foreign = ch.sourceId != details.sourceId
+							val subtitleParts = listOfNotNull(
+								if (foreign) MangaSources.byId(ch.sourceId)?.name else null,
+								ch.scanlator?.takeIf { it.isNotBlank() },
+								ch.branch?.takeIf { state.branches.size > 1 },
+							)
 							KomiListRow(
 								title = ch.displayName,
 								subtitle = subtitleParts.joinToString(" · ").ifBlank { null },
@@ -370,7 +384,7 @@ fun DetailsScreen(source: LoadedSource, manga: MangaRef, onBack: () -> Unit) {
 											DownloadItem.STATUS_RUNNING, DownloadItem.STATUS_QUEUED -> KomiBadge(text = "…", tone = KomiBadgeTone.Neutral)
 											else -> KomiButton(
 												onClick = {
-													if (DownloadRepository.enqueue(source, details, ch) != null) {
+													if (DownloadRepository.enqueue(MangaSources.byId(ch.sourceId) ?: source, details, ch) != null) {
 														DownloadService.start(context)
 														Toast.makeText(context, R.string.download_started, Toast.LENGTH_SHORT).show()
 													}

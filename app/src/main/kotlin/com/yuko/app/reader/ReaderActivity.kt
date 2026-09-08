@@ -100,6 +100,8 @@ object ReaderLaunch {
 	var chapters: List<ChapterRef> = emptyList()
 	var index: Int = 0
 	var local: DownloadItem? = null
+	/** mergeKey -> copies of the chapter in other sources, tried when the first fails. */
+	var alternates: Map<String, List<ChapterRef>> = emptyMap()
 }
 
 /** One page: a remote URL resolved from the source, or a file on disk. */
@@ -120,6 +122,7 @@ class ReaderActivity : ComponentActivity() {
 					chapters = ReaderLaunch.chapters,
 					startIndex = ReaderLaunch.index,
 					local = ReaderLaunch.local,
+					alternates = ReaderLaunch.alternates,
 					onClose = { finish() },
 					onSystemBars = ::setSystemBars,
 				)
@@ -134,11 +137,12 @@ class ReaderActivity : ComponentActivity() {
 	}
 
 	companion object {
-		fun start(context: Context, manga: MangaRef, chapters: List<ChapterRef>, index: Int) {
+		fun start(context: Context, manga: MangaRef, chapters: List<ChapterRef>, index: Int, alternates: Map<String, List<ChapterRef>> = emptyMap()) {
 			ReaderLaunch.manga = manga
 			ReaderLaunch.chapters = chapters
 			ReaderLaunch.index = index.coerceIn(0, (chapters.size - 1).coerceAtLeast(0))
 			ReaderLaunch.local = null
+			ReaderLaunch.alternates = alternates
 			context.startActivity(Intent(context, ReaderActivity::class.java))
 		}
 
@@ -147,6 +151,7 @@ class ReaderActivity : ComponentActivity() {
 			ReaderLaunch.chapters = listOf(item.chapter)
 			ReaderLaunch.index = 0
 			ReaderLaunch.local = item
+			ReaderLaunch.alternates = emptyMap()
 			context.startActivity(Intent(context, ReaderActivity::class.java))
 		}
 	}
@@ -158,14 +163,17 @@ private fun ReaderScreen(
 	chapters: List<ChapterRef>,
 	startIndex: Int,
 	local: DownloadItem?,
+	alternates: Map<String, List<ChapterRef>>,
 	onClose: () -> Unit,
 	onSystemBars: (Boolean) -> Unit,
 ) {
 	val colors = LocalPersonality.current.colors
-	val source = remember(manga.sourceId) { MangaSources.byId(manga.sourceId) }
 	var chapterIndex by remember { mutableStateOf(startIndex) }
 	val chapter = chapters.getOrNull(chapterIndex)
 	var pages by remember { mutableStateOf<List<PageItem>?>(null) }
+	/** Source the pages were actually taken from (may be an alternate). */
+	var source by remember { mutableStateOf<LoadedSource?>(null) }
+	var sourceNote by remember { mutableStateOf<String?>(null) }
 	var error by remember { mutableStateOf<String?>(null) }
 	var controls by remember { mutableStateOf(false) }
 	var showSettings by remember { mutableStateOf(false) }
@@ -181,21 +189,34 @@ private fun ReaderScreen(
 		error = null
 		val ch = chapter ?: return@LaunchedEffect
 		startPage = HistoryRepository.progress(manga.key)?.takeIf { it.chapter.id == ch.id }?.page ?: 0
-		try {
-			pages = withContext(Dispatchers.IO) {
-				if (local != null) {
-					DownloadRepository.pageFiles(local).mapIndexed { i, f -> PageItem(i, file = f) }
-				} else {
-					val parser = source?.parser ?: throw IllegalStateException("Fuente no disponible")
-					withTimeout(60_000) { parser.getPages(ch.toChapter()) }.mapIndexed { i, p -> PageItem(i, remote = p) }
-				}
-			}
+		sourceNote = null
+		if (local != null) {
+			source = MangaSources.byId(local.chapter.sourceId)
+			pages = DownloadRepository.pageFiles(local).mapIndexed { i, f -> PageItem(i, file = f) }
 			if (pages.isNullOrEmpty()) error = "El capítulo no tiene páginas"
-		} catch (e: kotlinx.coroutines.CancellationException) {
-			throw e
-		} catch (e: Throwable) {
-			error = e.message ?: e.javaClass.simpleName
+			return@LaunchedEffect
 		}
+		// the chapter's own source first, then the same chapter in the other sources
+		val candidates = listOf(ch) + alternates[com.yuko.app.ui.ChapterMerge.key(ch)].orEmpty().filter { it.sourceId != ch.sourceId }
+		var lastError: String? = null
+		for ((i, candidate) in candidates.withIndex()) {
+			val src = MangaSources.byId(candidate.sourceId) ?: continue
+			try {
+				val result = withContext(Dispatchers.IO) {
+					withTimeout(45_000) { src.parser.getPages(candidate.toChapter()) }.mapIndexed { idx, p -> PageItem(idx, remote = p) }
+				}
+				if (result.isEmpty()) { lastError = "El capítulo no tiene páginas"; continue }
+				source = src
+				pages = result
+				if (i > 0) sourceNote = src.name
+				return@LaunchedEffect
+			} catch (e: kotlinx.coroutines.CancellationException) {
+				throw e
+			} catch (e: Throwable) {
+				lastError = e.message ?: e.javaClass.simpleName
+			}
+		}
+		error = lastError ?: "Fuente no disponible"
 	}
 
 	val list = pages
@@ -227,6 +248,12 @@ private fun ReaderScreen(
 			else -> PagedPages(list, source, rtl, startPage, chapterIndex, onPage = { currentPage = it }, onTap = { controls = !controls })
 		}
 
+		sourceNote?.let { note ->
+			KomiText(
+				text = note, role = KomiTextRole.Label, color = Color.White.copy(alpha = 0.7f), uppercase = false, fontSize = 10.sp,
+				modifier = Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(8.dp),
+			)
+		}
 		if (controls) {
 			ReaderControls(
 				manga = manga,

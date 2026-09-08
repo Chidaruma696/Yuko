@@ -200,7 +200,7 @@ class DownloadService : Service() {
 	}
 
 	private suspend fun downloadChapter(item: DownloadItem) {
-		val source = MangaSources.byId(item.manga.sourceId) ?: throw IllegalStateException("Fuente no disponible")
+		val source = MangaSources.byId(item.chapter.sourceId) ?: MangaSources.byId(item.manga.sourceId) ?: throw IllegalStateException("Fuente no disponible")
 		val parser = source.parser
 		val pages = withTimeout(RESOLVE_TIMEOUT) { parser.getPages(item.chapter.toChapter()) }
 		if (pages.isEmpty()) throw IllegalStateException("El capítulo no tiene páginas")
