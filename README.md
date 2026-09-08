@@ -43,7 +43,7 @@ Yuko no está en Play Store ni va a estarlo; se distribuye solo desde aquí. Y m
 
 ## 🗺️ Qué es
 
-Yuko es la hermana de [Watanuki](https://github.com/Chidaruma696/Watanuki): la misma idea aplicada al manga. Toma los parsers de la comunidad de [Kotatsu](https://github.com/kotatsu-redo/kotatsu-parsers-redo), los **compila dentro del APK** (nada de instalar extensiones sueltas), los envuelve en una interfaz de estética manga y les pone un lector hecho para leer de derecha a izquierda.
+Yuko es la maestra de [Watanuki](https://github.com/Chidaruma696/Watanuki): la misma idea, aplicada al manga. Toma los parsers de la comunidad de [Kotatsu](https://github.com/kotatsu-redo/kotatsu-parsers-redo), los **compila dentro del APK** (nada de instalar extensiones sueltas), los envuelve en una interfaz de estética manga y les pone un lector hecho para leer de derecha a izquierda.
 
 | 📖 Leer | 📥 Guardar | 🎨 Vivir |
 | --- | --- | --- |
