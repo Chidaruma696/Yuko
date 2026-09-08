@@ -93,4 +93,10 @@
 	<string name="credit_source_code_summary">Código abierto bajo Apache 2.0. Apoya a la industria oficial del manga.</string>
 	<string name="merging_sources">Buscando más capítulos en las otras fuentes…</string>
 	<string name="completed_with">Completado con: %1$s</string>
+	<string name="servers">Servidores</string>
+	<string name="other_servers">Otros servidores</string>
+	<string name="current_server">actual</string>
+	<string name="search_more_sources">Buscar en más fuentes</string>
+	<string name="no_alternates">Ninguna otra fuente tiene este capítulo todavía. Prueba una búsqueda más amplia.</string>
+	<string name="page_failed">Esta página no cargó desde este servidor.</string>
 </resources>

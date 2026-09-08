@@ -122,7 +122,7 @@ class ReaderActivity : ComponentActivity() {
 					chapters = ReaderLaunch.chapters,
 					startIndex = ReaderLaunch.index,
 					local = ReaderLaunch.local,
-					alternates = ReaderLaunch.alternates,
+					initialAlternates = ReaderLaunch.alternates,
 					onClose = { finish() },
 					onSystemBars = ::setSystemBars,
 				)
@@ -163,12 +163,20 @@ private fun ReaderScreen(
 	chapters: List<ChapterRef>,
 	startIndex: Int,
 	local: DownloadItem?,
-	alternates: Map<String, List<ChapterRef>>,
+	initialAlternates: Map<String, List<ChapterRef>>,
 	onClose: () -> Unit,
 	onSystemBars: (Boolean) -> Unit,
 ) {
 	val colors = LocalPersonality.current.colors
+	val scope = rememberCoroutineScope()
 	var chapterIndex by remember { mutableStateOf(startIndex) }
+	/** Copies of each chapter in other sources; grows when the user searches more sources. */
+	var alternates by remember { mutableStateOf(initialAlternates) }
+	/** Server picked by hand for the current chapter, if any. */
+	var forced by remember { mutableStateOf<ChapterRef?>(null) }
+	var reloadTick by remember { mutableStateOf(0) }
+	var showServers by remember { mutableStateOf(false) }
+	var searching by remember { mutableStateOf(false) }
 	val chapter = chapters.getOrNull(chapterIndex)
 	var pages by remember { mutableStateOf<List<PageItem>?>(null) }
 	/** Source the pages were actually taken from (may be an alternate). */
@@ -184,7 +192,7 @@ private fun ReaderScreen(
 	LaunchedEffect(controls) { onSystemBars(controls) }
 
 	// load the page list whenever the chapter changes
-	LaunchedEffect(chapterIndex, local?.id) {
+	LaunchedEffect(chapterIndex, local?.id, forced, reloadTick) {
 		pages = null
 		error = null
 		val ch = chapter ?: return@LaunchedEffect
@@ -197,7 +205,7 @@ private fun ReaderScreen(
 			return@LaunchedEffect
 		}
 		// the chapter's own source first, then the same chapter in the other sources
-		val candidates = listOf(ch) + alternates[com.yuko.app.ui.ChapterMerge.key(ch)].orEmpty().filter { it.sourceId != ch.sourceId }
+		val candidates = forced?.let { listOf(it) } ?: (listOf(ch) + alternates[com.yuko.app.ui.ChapterMerge.key(ch)].orEmpty().filter { it.sourceId != ch.sourceId })
 		var lastError: String? = null
 		for ((i, candidate) in candidates.withIndex()) {
 			val src = MangaSources.byId(candidate.sourceId) ?: continue
@@ -208,7 +216,7 @@ private fun ReaderScreen(
 				if (result.isEmpty()) { lastError = "El capítulo no tiene páginas"; continue }
 				source = src
 				pages = result
-				if (i > 0) sourceNote = src.name
+				if (i > 0 || forced != null) sourceNote = src.name
 				return@LaunchedEffect
 			} catch (e: kotlinx.coroutines.CancellationException) {
 				throw e
@@ -236,7 +244,8 @@ private fun ReaderScreen(
 			error != null -> Column(Modifier.align(Alignment.Center).padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
 				KomiText(text = error.orEmpty(), role = KomiTextRole.Body, color = Color.White, uppercase = false, textAlign = TextAlign.Center)
 				Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-					KomiButton(onClick = { val i = chapterIndex; chapterIndex = -1; chapterIndex = i }, label = stringResource(R.string.retry), size = KomiButtonSize.Sm)
+					KomiButton(onClick = { reloadTick++ }, label = stringResource(R.string.retry), size = KomiButtonSize.Sm)
+					KomiButton(onClick = { showServers = true }, label = stringResource(R.string.other_servers), size = KomiButtonSize.Sm, variant = KomiButtonVariant.Tonal)
 					KomiButton(onClick = onClose, label = stringResource(R.string.close), size = KomiButtonSize.Sm, variant = KomiButtonVariant.Outline)
 				}
 			}
@@ -244,8 +253,8 @@ private fun ReaderScreen(
 				KomiCircularProgress(color = Color.White)
 				KomiText(text = chapter?.displayName.orEmpty(), role = KomiTextRole.Label, color = Color.White, uppercase = false)
 			}
-			webtoon -> WebtoonPages(list, source, startPage, onPage = { currentPage = it }, onTap = { controls = !controls })
-			else -> PagedPages(list, source, rtl, startPage, chapterIndex, onPage = { currentPage = it }, onTap = { controls = !controls })
+			webtoon -> WebtoonPages(list, source, startPage, onPage = { currentPage = it }, onTap = { controls = !controls }, onServers = { showServers = true })
+			else -> PagedPages(list, source, rtl, startPage, chapterIndex, onPage = { currentPage = it }, onTap = { controls = !controls }, onServers = { showServers = true })
 		}
 
 		sourceNote?.let { note ->
@@ -264,11 +273,58 @@ private fun ReaderScreen(
 				hasPrev = chapterIndex > 0 && local == null,
 				hasNext = chapterIndex < chapters.lastIndex && local == null,
 				onSeek = { currentPage = it; startPage = it },
-				onPrev = { chapterIndex-- },
-				onNext = { chapterIndex++ },
+				onPrev = { forced = null; chapterIndex-- },
+				onNext = { forced = null; chapterIndex++ },
 				onClose = onClose,
 				onSettings = { showSettings = true },
+				onServers = { showServers = true },
 			)
+		}
+	}
+
+	// server picker: the chapter's own source, every known copy elsewhere, and a deeper search
+	if (showServers && chapter != null) {
+		val key = com.yuko.app.ui.ChapterMerge.key(chapter)
+		val options = (listOf(chapter) + alternates[key].orEmpty()).distinctBy { it.sourceId }
+		fun searchMore() {
+			if (searching) return
+			searching = true
+			scope.launch {
+				val primary = MangaSources.byId(manga.sourceId)
+				val found = if (primary != null) runCatching { com.yuko.app.ui.ChapterMerge.findElsewhere(primary, manga, onlyEnabled = false) }.getOrDefault(emptyList()) else emptyList()
+				val map = alternates.toMutableMap()
+				for ((_, list) in found) for (c in list) {
+					val k = com.yuko.app.ui.ChapterMerge.key(c)
+					val cur = map[k].orEmpty()
+					if (cur.none { it.sourceId == c.sourceId } && chapters.none { it.sourceId == c.sourceId && com.yuko.app.ui.ChapterMerge.key(it) == k }) map[k] = cur + c
+				}
+				alternates = map
+				searching = false
+			}
+		}
+		KomiSheet(onDismiss = { showServers = false }, title = stringResource(R.string.servers), titleJp = chapter.displayName) {
+			KomiListContainer {
+				options.forEachIndexed { index, option ->
+					val src = MangaSources.byId(option.sourceId)
+					val isCurrent = source?.id == option.sourceId
+					KomiListRow(
+						title = src?.name ?: option.sourceId,
+						subtitle = listOfNotNull(option.scanlator?.takeIf { it.isNotBlank() }, if (isCurrent) stringResource(R.string.current_server) else null).joinToString(" · ").ifBlank { null },
+						selected = isCurrent,
+						onClick = { forced = option; showServers = false },
+						showDivider = index < options.lastIndex,
+					)
+				}
+			}
+			if (options.size <= 1 && !searching) {
+				KomiText(text = stringResource(R.string.no_alternates), role = KomiTextRole.Body, color = colors.onSurfaceVariant, uppercase = false, modifier = Modifier.padding(top = 8.dp))
+			}
+			Spacer(Modifier.height(10.dp))
+			Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+				KomiButton(onClick = { searchMore() }, label = stringResource(R.string.search_more_sources), size = KomiButtonSize.Sm, enabled = !searching)
+				if (searching) KomiCircularProgress()
+			}
+			Spacer(Modifier.height(8.dp))
 		}
 	}
 
@@ -324,6 +380,7 @@ private fun PagedPages(
 	chapterIndex: Int,
 	onPage: (Int) -> Unit,
 	onTap: () -> Unit,
+	onServers: () -> Unit,
 ) {
 	val pagerState = rememberPagerState(initialPage = startPage.coerceIn(0, (pages.size - 1).coerceAtLeast(0))) { pages.size }
 	val scope = rememberCoroutineScope()
@@ -341,6 +398,7 @@ private fun PagedPages(
 		ZoomablePage(
 			page = pages[index],
 			source = source,
+			onServers = onServers,
 			onZoomChange = { if (index == pagerState.currentPage) zoomed = it },
 			onTapZone = { zone ->
 				when (zone) {
@@ -356,7 +414,7 @@ private fun PagedPages(
 
 /** Vertical strip, the way webtoons are meant to be read. */
 @Composable
-private fun WebtoonPages(pages: List<PageItem>, source: LoadedSource?, startPage: Int, onPage: (Int) -> Unit, onTap: () -> Unit) {
+private fun WebtoonPages(pages: List<PageItem>, source: LoadedSource?, startPage: Int, onPage: (Int) -> Unit, onTap: () -> Unit, onServers: () -> Unit) {
 	val listState = rememberLazyListState(initialFirstVisibleItemIndex = startPage.coerceIn(0, (pages.size - 1).coerceAtLeast(0)))
 	LaunchedEffect(listState) { snapshotFlow { listState.firstVisibleItemIndex }.collect { onPage(it) } }
 	LazyColumn(
@@ -372,8 +430,12 @@ private fun WebtoonPages(pages: List<PageItem>, source: LoadedSource?, startPage
 					Box(Modifier.fillMaxWidth().height(320.dp), contentAlignment = Alignment.Center) { KomiCircularProgress(color = Color.White) }
 				}
 				if (state is AsyncImagePainter.State.Error) {
-					Box(Modifier.fillMaxWidth().height(160.dp), contentAlignment = Alignment.Center) {
+					Column(Modifier.fillMaxWidth().height(200.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
 						KomiText(text = "✕ ${page.index + 1}", role = KomiTextRole.Label, color = Color.White)
+						Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
+							KomiButton(onClick = { painter.restart() }, label = stringResource(R.string.retry), size = KomiButtonSize.Sm, variant = KomiButtonVariant.Outline)
+							KomiButton(onClick = onServers, label = stringResource(R.string.other_servers), size = KomiButtonSize.Sm, variant = KomiButtonVariant.Tonal)
+						}
 					}
 				}
 				androidx.compose.foundation.Image(painter = painter, contentDescription = null, contentScale = ContentScale.FillWidth, modifier = Modifier.fillMaxWidth())
@@ -390,7 +452,7 @@ private fun <T> kotlinx.coroutines.flow.StateFlow<T>.collectAsStateCompat() = co
  * with pinch zoom, drag to pan, double tap to zoom and tap zones on the sides to turn pages.
  */
 @Composable
-private fun ZoomablePage(page: PageItem, source: LoadedSource?, rtl: Boolean, onZoomChange: (Boolean) -> Unit, onTapZone: (Int) -> Unit) {
+private fun ZoomablePage(page: PageItem, source: LoadedSource?, rtl: Boolean, onServers: () -> Unit, onZoomChange: (Boolean) -> Unit, onTapZone: (Int) -> Unit) {
 	val model = pageModel(page, source)
 	val painter = rememberAsyncImagePainter(model)
 	val state by painter.state.collectAsStateCompat()
@@ -458,7 +520,11 @@ private fun ZoomablePage(page: PageItem, source: LoadedSource?, rtl: Boolean, on
 				is AsyncImagePainter.State.Loading, is AsyncImagePainter.State.Empty -> KomiCircularProgress(color = Color.White)
 				is AsyncImagePainter.State.Error -> Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
 					KomiText(text = "✕ ${page.index + 1}", role = KomiTextRole.Title, color = Color.White)
-					KomiButton(onClick = { painter.restart() }, label = stringResource(R.string.retry), size = KomiButtonSize.Sm, variant = KomiButtonVariant.Outline)
+					KomiText(text = stringResource(R.string.page_failed), role = KomiTextRole.Body, color = Color.White.copy(alpha = 0.8f), uppercase = false, fontSize = 12.sp, textAlign = TextAlign.Center)
+					Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+						KomiButton(onClick = { painter.restart() }, label = stringResource(R.string.retry), size = KomiButtonSize.Sm, variant = KomiButtonVariant.Outline)
+						KomiButton(onClick = onServers, label = stringResource(R.string.other_servers), size = KomiButtonSize.Sm, variant = KomiButtonVariant.Tonal)
+					}
 				}
 				else -> Unit
 			}
@@ -497,6 +563,7 @@ private fun pageModel(page: PageItem, source: LoadedSource?): Any? {
 			val headers = NetworkHeaders.Builder()
 			source?.homeUrl?.takeIf { it.isNotBlank() }?.let { headers.set("Referer", it) }
 			headers.set("User-Agent", SourcesRuntime.userAgent)
+			source?.let { headers.set(com.yuko.app.SourceTaggingCallFactory.HEADER, it.id) }
 			httpHeaders(headers.build())
 		}.build()
 	}
@@ -516,6 +583,7 @@ private fun ReaderControls(
 	onNext: () -> Unit,
 	onClose: () -> Unit,
 	onSettings: () -> Unit,
+	onServers: () -> Unit,
 ) {
 	val colors = LocalPersonality.current.colors
 	Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.SpaceBetween) {
@@ -529,6 +597,7 @@ private fun ReaderControls(
 				KomiText(text = manga.title, role = KomiTextRole.Title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 15.sp)
 				KomiText(text = chapter?.displayName.orEmpty(), role = KomiTextRole.Label, color = colors.onSurfaceVariant, uppercase = false, maxLines = 1, overflow = TextOverflow.Ellipsis)
 			}
+			KomiButton(onClick = onServers, label = "⇄", size = KomiButtonSize.Sm, variant = KomiButtonVariant.Outline)
 			KomiButton(onClick = onSettings, label = "⚙", size = KomiButtonSize.Sm, variant = KomiButtonVariant.Outline)
 		}
 		Column(
