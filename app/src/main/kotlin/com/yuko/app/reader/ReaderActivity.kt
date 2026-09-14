@@ -8,8 +8,11 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculatePan
+import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -37,6 +40,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -46,6 +50,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -384,22 +389,21 @@ private fun PagedPages(
 ) {
 	val pagerState = rememberPagerState(initialPage = startPage.coerceIn(0, (pages.size - 1).coerceAtLeast(0))) { pages.size }
 	val scope = rememberCoroutineScope()
-	var zoomed by remember { mutableStateOf(false) }
 	LaunchedEffect(pagerState) { snapshotFlow { pagerState.currentPage }.collect { onPage(it) } }
 	LaunchedEffect(startPage, chapterIndex) { if (pagerState.currentPage != startPage) pagerState.scrollToPage(startPage.coerceIn(0, (pages.size - 1).coerceAtLeast(0))) }
 
+	// Swiping stays enabled even while zoomed: the page decides gesture by gesture whether a
+	// drag pans the image (consumed there) or is left for the pager to turn the page.
 	HorizontalPager(
 		state = pagerState,
 		modifier = Modifier.fillMaxSize(),
 		reverseLayout = rtl,
-		userScrollEnabled = !zoomed,
 		beyondViewportPageCount = 1,
 	) { index ->
 		ZoomablePage(
 			page = pages[index],
 			source = source,
 			onServers = onServers,
-			onZoomChange = { if (index == pagerState.currentPage) zoomed = it },
 			onTapZone = { zone ->
 				when (zone) {
 					0 -> Unit.also { onTap() }
@@ -450,16 +454,20 @@ private fun <T> kotlinx.coroutines.flow.StateFlow<T>.collectAsStateCompat() = co
 /**
  * A page that fits the screen height by default (or width / whole screen per settings),
  * with pinch zoom, drag to pan, double tap to zoom and tap zones on the sides to turn pages.
+ *
+ * Gestures are shared with the pager above: a one-finger drag at scale 1 is never consumed
+ * here, so the pager turns the page; a pinch, or a drag while zoomed that the image can still
+ * absorb, is consumed so the pager stays still; a sideways drag while zoomed that would push
+ * past the image edge is left to the pager as well.
  */
 @Composable
-private fun ZoomablePage(page: PageItem, source: LoadedSource?, rtl: Boolean, onServers: () -> Unit, onZoomChange: (Boolean) -> Unit, onTapZone: (Int) -> Unit) {
+private fun ZoomablePage(page: PageItem, source: LoadedSource?, rtl: Boolean, onServers: () -> Unit, onTapZone: (Int) -> Unit) {
 	val model = pageModel(page, source)
 	val painter = rememberAsyncImagePainter(model)
 	val state by painter.state.collectAsStateCompat()
 	var zoom by remember(page.index) { mutableFloatStateOf(1f) }
 	var offset by remember(page.index) { mutableStateOf(Offset.Zero) }
 	val scaleMode = AppPrefs.readerScale
-	LaunchedEffect(zoom) { onZoomChange(zoom > 1.02f) }
 
 	BoxWithConstraints(Modifier.fillMaxSize().clipToBounds(), contentAlignment = Alignment.Center) {
 		val density = LocalDensity.current
@@ -482,6 +490,8 @@ private fun ZoomablePage(page: PageItem, source: LoadedSource?, rtl: Boolean, on
 			return Offset(o.x.coerceIn(-maxX, maxX), o.y.coerceIn(-maxY, maxY))
 		}
 		val effective = clamp(offset)
+		// the gesture loop below outlives this composition; always clamp with the current geometry
+		val clampNow = rememberUpdatedState<(Offset) -> Offset> { clamp(it) }
 
 		Box(
 			Modifier
@@ -508,10 +518,44 @@ private fun ZoomablePage(page: PageItem, source: LoadedSource?, rtl: Boolean, on
 					)
 				}
 				.pointerInput(page.index, base) {
-					detectTransformGestures { _, pan, gestureZoom, _ ->
-						val newZoom = (zoom * gestureZoom).coerceIn(1f, 5f)
-						zoom = newZoom
-						offset = clamp(offset + pan)
+					awaitEachGesture {
+						awaitFirstDown(requireUnconsumed = false)
+						var ours = false
+						var theirs = false
+						var travelled = Offset.Zero
+						while (true) {
+							val event = awaitPointerEvent()
+							val pressed = event.changes.filter { it.pressed }
+							if (pressed.isEmpty()) break
+							if (theirs) continue
+							// someone above (the pager) already took this gesture
+							if (!ours && event.changes.any { it.isConsumed }) { theirs = true; continue }
+							val pan = event.calculatePan()
+							val pinch = event.calculateZoom()
+							when {
+								pressed.size > 1 -> {
+									ours = true
+									zoom = (zoom * pinch).coerceIn(1f, 5f)
+									offset = clampNow.value(offset + pan)
+								}
+								ours -> offset = clampNow.value(offset + pan)
+								zoom > 1.02f -> {
+									travelled += pan
+									if (travelled.getDistance() > viewConfiguration.touchSlop) {
+										val from = clampNow.value(offset)
+										val target = clampNow.value(from + travelled)
+										val sideways = abs(travelled.x) >= abs(travelled.y)
+										// already at the image edge: this swipe turns the page instead
+										if (sideways && abs(target.x - from.x) < 0.5f) { theirs = true; continue }
+										ours = true
+										offset = target
+									}
+								}
+								// one finger at scale 1: the pager's swipe, untouched
+								else -> Unit
+							}
+							if (ours) event.changes.forEach { if (it.positionChanged()) it.consume() }
+						}
 					}
 				},
 			contentAlignment = Alignment.Center,
@@ -622,6 +666,3 @@ private fun ReaderControls(
 		}
 	}
 }
-
-@Suppress("unused")
-private fun keepAbs(x: Float) = abs(x)
