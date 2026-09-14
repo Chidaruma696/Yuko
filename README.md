@@ -50,7 +50,7 @@ Yuko es la maestra de [Watanuki](https://github.com/Chidaruma696/Watanuki): la m
 | 📖 Leer | 📥 Guardar | 🎨 Vivir |
 | --- | --- | --- |
 | Inicio con "Seguir leyendo", recomendaciones por tus géneros, últimas actualizaciones y populares por fuente | Descargas en paralelo, por capítulo o serie completa, con verificación de espacio | Diez paletas inspiradas en personajes de Touhou, en claro y oscuro |
-| Lector de derecha a izquierda por defecto, ajustado al alto de la pantalla, con zoom, modo vertical para webtoons y control por zonas | Lectura sin conexión de lo guardado | Sistema de diseño "Manga" portado de Komi Store: papel, tinta, sellos y tramas |
+| Lector de derecha a izquierda por defecto, ajustado al alto de la pantalla, con zoom, modo vertical para webtoons y control por zonas · Búsqueda global en todas las fuentes activas a la vez | Lectura sin conexión de lo guardado | Sistema de diseño "Manga" portado de Komi Store: papel, tinta, sellos y tramas |
 | Biblioteca con favoritos, leer más tarde e historial con progreso por página | Cola con progreso y reintentos | Filtro +18 **desactivado por defecto** y filtro de géneros excluidos desde el primer arranque |
 
 <br/>
@@ -134,7 +134,7 @@ Requisitos: JDK 17 o superior y el SDK de Android 36.
 
 - [ ] Más idiomas de fuentes (hoy solo `es`)
 - [ ] Filtros por género y estado dentro del catálogo de cada fuente
-- [ ] Búsqueda global en todas las fuentes activas
+- [x] Búsqueda global en todas las fuentes activas
 - [ ] Ajustes por fuente (dominio alternativo, agente de usuario)
 - [ ] Copia de seguridad de biblioteca e historial
 - [ ] Sincronización con AniList y MyAnimeList

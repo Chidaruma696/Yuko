@@ -99,4 +99,10 @@
 	<string name="search_more_sources">Buscar en más fuentes</string>
 	<string name="no_alternates">Ninguna otra fuente tiene este capítulo todavía. Prueba una búsqueda más amplia.</string>
 	<string name="page_failed">Esta página no cargó desde este servidor.</string>
+	<string name="global_search">Búsqueda global</string>
+	<string name="global_search_kicker">検索 · TODAS LAS FUENTES</string>
+	<string name="global_search_placeholder">Título a buscar</string>
+	<string name="global_search_hint">Escribe un título y se busca en todas las fuentes activas a la vez.</string>
+	<string name="global_search_no_sources">No hay fuentes activas. Activa alguna en Fuentes.</string>
+	<string name="sources_progress">%1$d/%2$d fuentes</string>
 </resources>

@@ -101,4 +101,10 @@
 	<string name="search_more_sources">Search in more sources</string>
 	<string name="no_alternates">No other source has this chapter yet. Try a deeper search.</string>
 	<string name="page_failed">This page did not load from this server.</string>
+	<string name="global_search">Global search</string>
+	<string name="global_search_kicker">検索 · EVERY SOURCE</string>
+	<string name="global_search_placeholder">Title to look for</string>
+	<string name="global_search_hint">Type a title and it is looked up in every active source at once.</string>
+	<string name="global_search_no_sources">No active sources. Turn some on in Sources.</string>
+	<string name="sources_progress">%1$d/%2$d sources</string>
 </resources>

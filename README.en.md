@@ -50,7 +50,7 @@ Yuko is [Watanuki](https://github.com/Chidaruma696/Watanuki)'s master: the same 
 | 📖 Read | 📥 Save | 🎨 Live |
 | --- | --- | --- |
 | Home with "Continue reading," recommendations based on your genres, latest updates, and most popular per source | Parallel downloads, per chapter or full series, with free-space checks | Ten palettes inspired by Touhou characters, in light and dark |
-| Right-to-left reader by default, fit to screen height, with zoom, vertical mode for webtoons, and tap-zone controls | Offline reading of everything you saved | "Manga" design system ported from Komi Store: paper, ink, stamps, and screentones |
+| Right-to-left reader by default, fit to screen height, with zoom, vertical mode for webtoons, and tap-zone controls · Global search across every active source at once | Offline reading of everything you saved | "Manga" design system ported from Komi Store: paper, ink, stamps, and screentones |
 | Library with favorites, read later, and history with per-page progress | Queue with progress and retries | 18+ filter **off by default** and excluded-genre filter from the very first launch |
 
 <br/>
@@ -134,7 +134,7 @@ Requirements: JDK 17 or later and Android SDK 36.
 
 - [ ] More source languages (only `es` today)
 - [ ] Genre and status filters inside each source's catalog
-- [ ] Global search across all active sources
+- [x] Global search across all active sources
 - [ ] Per-source settings (alternate domain, user agent)
 - [ ] Library and history backup
 - [ ] Sync with AniList and MyAnimeList

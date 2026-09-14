@@ -20,6 +20,7 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import com.yuko.app.ui.AppPrefs
 import com.yuko.app.ui.komi.KomiBottomBar
+import com.yuko.app.ui.komi.KomiIconButton
 import com.yuko.app.ui.komi.KomiNavItem
 import com.yuko.app.ui.komi.KomiScaffold
 import com.yuko.app.ui.komi.KomiTopBar
@@ -27,6 +28,7 @@ import com.yuko.app.ui.komi.YukoTheme
 import com.yuko.app.ui.screens.BrowseScreen
 import com.yuko.app.ui.screens.DetailsScreen
 import com.yuko.app.ui.screens.DownloadsScreen
+import com.yuko.app.ui.screens.GlobalSearchScreen
 import com.yuko.app.ui.screens.HomeScreen
 import com.yuko.app.ui.screens.LibraryScreen
 import com.yuko.app.ui.screens.OnboardingScreen
@@ -68,6 +70,8 @@ private enum class Tab(val id: String) { HOME("home"), LIBRARY("library"), SOURC
 private sealed interface Screen {
 	data class Browse(val source: LoadedSource) : Screen
 	data class Details(val source: LoadedSource, val manga: MangaRef) : Screen
+	/** One query against every enabled source. */
+	data object Search : Screen
 }
 
 @Composable
@@ -93,6 +97,7 @@ private fun YukoNav() {
 			manga = current.manga,
 			onBack = { stack = stack.dropLast(1) },
 		)
+		Screen.Search -> GlobalSearchScreen(onOpen = ::openManga, onBack = { stack = stack.dropLast(1) })
 		null -> {
 			val items = listOf(
 				KomiNavItem(Tab.HOME.id, stringResource(R.string.home), ImageVector.vectorResource(R.drawable.ic_home)),
@@ -109,7 +114,14 @@ private fun YukoNav() {
 				Tab.SETTINGS -> "設定 · ${stringResource(R.string.settings).uppercase()}"
 			}
 			KomiScaffold(
-				topBar = { KomiTopBar(title = stringResource(R.string.app_name), titleAccent = "ko", subtitle = kicker) },
+				topBar = {
+					KomiTopBar(
+						title = stringResource(R.string.app_name), titleAccent = "ko", subtitle = kicker,
+						actions = if (tab == Tab.HOME || tab == Tab.SOURCES) {
+							{ KomiIconButton(icon = ImageVector.vectorResource(R.drawable.ic_search), contentDescription = stringResource(R.string.global_search), onClick = { stack = stack + Screen.Search }) }
+						} else null,
+					)
+				},
 				bottomBar = { KomiBottomBar(items = items, selectedId = tab.id, onSelect = { id -> tab = Tab.entries.first { it.id == id } }) },
 			) { padding ->
 				when (tab) {
