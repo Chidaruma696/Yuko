@@ -47,7 +47,7 @@
 	<string name="show_adult">Show adult content (18+)</string>
 	<string name="show_adult_summary">Off by default. Hides adult sources and titles from Home, catalogues and search.</string>
 	<string name="genres_you_like">Genres you like</string>
-	<string name="genres_pick_hint">Pick at least three. They shape the "For you" row.</string>
+	<string name="genres_pick_hint">Pick at least three. They shape "For you" and the genre rows on Home.</string>
 	<string name="genres_excluded">Excluded genres</string>
 	<string name="genres_excluded_summary">Titles tagged with these never appear on Home nor in catalogues.</string>
 	<string name="search_genre">Search genre</string>

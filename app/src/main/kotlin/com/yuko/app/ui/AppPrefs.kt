@@ -73,20 +73,28 @@ object AppPrefs {
 	fun toggleSelectedGenre(id: String) = updateSelectedGenres(if (id in selectedGenres) selectedGenres - id else selectedGenres + id)
 	fun toggleExcludedGenre(id: String) = updateExcludedGenres(if (id in excludedGenres) excludedGenres - id else excludedGenres + id)
 
-	private val adultWords = listOf("hentai", "+18", "18+", "adulto", "adult", "smut", "erótico", "erotico", "porn", "xxx", "yaoi hard", "doujinshi")
+	/** Words that mark a tag as adult on the Spanish sources, besides the adult genres of [Genres]. */
+	private val adultWords = listOf(
+		"hentai", "+18", "18+", "adulto", "adult", "smut", "erótico", "erotico", "erotic", "porn", "xxx",
+		"yaoi hard", "doujinshi", "doujin", "ecchi", "sexo", "sexual", "nsfw", "r18", "r-18", "maduro", "mature",
+	)
+
+	private fun adultTags(tags: List<String>): Boolean {
+		val lower = tags.map { it.lowercase() }
+		if (lower.any { t -> adultWords.any { it in t } }) return true
+		return Genres.of(tags).any { Genres.byId[it]?.adult == true }
+	}
 
 	/** True when a title should stay hidden while adult content is off. */
 	fun isAdult(manga: Manga, source: LoadedSource?): Boolean {
 		if (source?.isNsfw == true) return true
 		if (manga.contentRating == ContentRating.ADULT) return true
-		val tags = manga.tags.map { it.title.lowercase() }
-		return tags.any { t -> adultWords.any { it in t } } || manga.title.lowercase().contains("hentai")
+		return adultTags(manga.tags.map { it.title }) || manga.title.lowercase().contains("hentai")
 	}
 
 	fun isAdult(ref: MangaRef, source: LoadedSource?): Boolean {
 		if (source?.isNsfw == true || ref.isNsfw) return true
-		val tags = ref.tags.map { it.title.lowercase() }
-		return tags.any { t -> adultWords.any { it in t } } || ref.title.lowercase().contains("hentai")
+		return adultTags(ref.tags.map { it.title }) || ref.title.lowercase().contains("hentai")
 	}
 
 	/** True when any of the manga's tags belongs to an excluded genre. */

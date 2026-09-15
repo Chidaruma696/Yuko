@@ -63,15 +63,18 @@ class BrowseViewModel : ViewModel() {
 				val result = withContext(Dispatchers.IO) {
 					val parser = src.parser
 					val orders = parser.availableSortOrders
+					// Adult titles and excluded genres are asked out at the source when it can filter them.
+					val base = SourceFilters.base(parser, SourceFilters.options(src))
 					when (s.mode) {
 						BrowseMode.POPULAR -> {
 							val order = listOf(SortOrder.POPULARITY, SortOrder.POPULARITY_WEEK, SortOrder.POPULARITY_MONTH, SortOrder.RATING).firstOrNull { it in orders } ?: orders.first()
-							parser.getList(offset, order, MangaListFilter())
+							parser.getList(offset, order, base)
 						}
-						BrowseMode.LATEST -> parser.getList(offset, SortOrder.UPDATED, MangaListFilter())
+						BrowseMode.LATEST -> parser.getList(offset, SortOrder.UPDATED, base)
 						BrowseMode.SEARCH -> {
 							val order = if (SortOrder.RELEVANCE in orders) SortOrder.RELEVANCE else orders.first()
-							parser.getList(offset, order, MangaListFilter(query = s.query))
+							val filter = if (parser.filterCapabilities.isSearchWithFiltersSupported) base.copy(query = s.query) else MangaListFilter(query = s.query)
+							parser.getList(offset, order, filter)
 						}
 					}
 				}

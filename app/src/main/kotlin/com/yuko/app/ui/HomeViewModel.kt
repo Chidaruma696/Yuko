@@ -16,7 +16,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import org.koitharu.kotatsu.parsers.model.Manga
-import org.koitharu.kotatsu.parsers.model.MangaListFilter
 import org.koitharu.kotatsu.parsers.model.SortOrder
 import kotlin.random.Random
 
@@ -64,10 +63,20 @@ data class HomeState(
 	val error: String? = null,
 )
 
+/** What one source answered for Home: its popular and latest lists, plus one list per liked genre it has a tag for. */
+private class SourceResult(
+	val source: LoadedSource,
+	val popular: List<Manga> = emptyList(),
+	val latest: List<Manga> = emptyList(),
+	val byGenre: Map<String, List<Manga>> = emptyMap(),
+)
+
 /**
- * Home feed: for every enabled source, the first page of popular and of recently updated
- * titles, mixed into "Para ti" (titles matching the chosen genres, random picks otherwise),
- * "Recientes" (interleaved) and one "Populares en X" row per source.
+ * Home feed. For every enabled source: the first page of popular and of recently updated titles,
+ * and one page per liked genre the source can filter by. From those come "Para ti" (only titles that
+ * belong to a liked genre; nothing random fills the gaps), one row per liked genre mixing sources,
+ * "Recientes" (interleaved) and one "Populares en X" row per source. Adult titles and excluded genres
+ * are asked out at the source when it can, and dropped afterwards when it cannot.
  */
 class HomeViewModel : ViewModel() {
 
@@ -91,34 +100,41 @@ class HomeViewModel : ViewModel() {
 				return@launch
 			}
 			val random = Random(seed)
+			val liked = AppPrefs.selectedGenres.mapNotNull { Genres.byId[it] }.filter { AppPrefs.showAdult || !it.adult }
+			// A few liked genres per load, so a shuffle brings different rows.
+			val rowGenres = liked.shuffled(random).take(GENRE_ROWS)
 			val results = withContext(Dispatchers.IO) {
 				coroutineScope {
 					enabled.map { src ->
 						async {
-							val parser = runCatching { src.parser }.getOrNull()
-							val orders = parser?.availableSortOrders.orEmpty()
-							val popular = if (parser != null) {
-								val order = listOf(SortOrder.POPULARITY, SortOrder.POPULARITY_WEEK, SortOrder.POPULARITY_MONTH, SortOrder.RATING).firstOrNull { it in orders }
-									?: orders.firstOrNull()
-								if (order != null) fetch(src) { parser.getList(0, order, MangaListFilter()) } else emptyList()
-							} else emptyList()
-							val latest = if (parser != null && SortOrder.UPDATED in orders) fetch(src) { parser.getList(0, SortOrder.UPDATED, MangaListFilter()) } else emptyList()
+							val result = runCatching { loadSource(src, rowGenres) }.getOrDefault(SourceResult(src))
 							state.update { it.copy(loadedSources = it.loadedSources + 1) }
-							Triple(src, popular, latest)
+							result
 						}
 					}.map { it.await() }
 				}
 			}
-			val rows = results.filter { it.second.isNotEmpty() }.map { (src, popular, _) ->
-				FeedRow(title = "Populares en ${src.name}", kicker = "人気", items = popular.take(20).map { FeedManga(it, src) }, source = src)
+			val genreRows = rowGenres.mapNotNull { genre ->
+				val lists = results.mapNotNull { r -> r.byGenre[genre.id]?.map { FeedManga(it, r.source) } }
+				val items = interleave(lists).filter { !it.manga.coverUrl.isNullOrBlank() }.distinctBy { ChapterMerge.normalizeTitle(it.manga.title) }.take(20)
+				if (items.isEmpty()) null else FeedRow(title = genre.name, kicker = genre.kicker, items = items)
 			}
-			val latest = interleave(results.map { (src, _, latest) -> latest.map { FeedManga(it, src) } }).distinctBy { ChapterMerge.normalizeTitle(it.manga.title) }.take(30)
-			val pool = results.flatMap { (src, popular, latest) -> (popular + latest).map { FeedManga(it, src) } }
+			val sourceRows = results.filter { it.popular.isNotEmpty() }.map { r ->
+				FeedRow(title = "Populares en ${r.source.name}", kicker = "人気", items = r.popular.take(20).map { FeedManga(it, r.source) }, source = r.source)
+			}
+			val latest = interleave(results.map { r -> r.latest.map { FeedManga(it, r.source) } }).distinctBy { ChapterMerge.normalizeTitle(it.manga.title) }.take(30)
+			// "Para ti": what came in by a liked genre, plus anything else whose own tags name one. Nothing random any more.
+			val likedIds = liked.map { it.id }.toSet()
+			val fromGenres = results.flatMap { r -> r.byGenre.values.flatten().map { FeedManga(it, r.source) } }
+			val tagged = if (likedIds.isEmpty()) emptyList() else results
+				.flatMap { r -> (r.popular + r.latest).map { FeedManga(it, r.source) } }
+				.filter { fm -> Genres.of(fm.manga.tags.map { it.title }).any { it in likedIds } }
+			val recommended = (fromGenres + tagged)
 				.filter { !it.manga.coverUrl.isNullOrBlank() }
 				.distinctBy { ChapterMerge.normalizeTitle(it.manga.title) }
-			val wanted = AppPrefs.selectedGenres
-			val matching = if (wanted.isEmpty()) emptyList() else pool.filter { fm -> Genres.of(fm.manga.tags.map { it.title }).any { it in wanted } }
-			val recommended = (matching.shuffled(random) + pool.shuffled(random)).distinctBy { it.key }.take(12)
+				.shuffled(random)
+				.take(12)
+			val rows = genreRows + sourceRows
 			state.update {
 				it.copy(
 					recommended = recommended,
@@ -129,6 +145,27 @@ class HomeViewModel : ViewModel() {
 				)
 			}
 		}
+	}
+
+	/** One source, its requests one after another so no site gets hammered; sources run in parallel. */
+	private suspend fun loadSource(src: LoadedSource, rowGenres: List<Genre>): SourceResult {
+		val parser = runCatching { src.parser }.getOrNull() ?: return SourceResult(src)
+		val options = SourceFilters.options(src)
+		val orders = parser.availableSortOrders
+		val popularOrder = listOf(SortOrder.POPULARITY, SortOrder.POPULARITY_WEEK, SortOrder.POPULARITY_MONTH, SortOrder.RATING).firstOrNull { it in orders }
+			?: orders.firstOrNull()
+		val filter = SourceFilters.base(parser, options)
+		val popular = if (popularOrder != null) fetch(src) { parser.getList(0, popularOrder, filter) } else emptyList()
+		val latest = if (SortOrder.UPDATED in orders) fetch(src) { parser.getList(0, SortOrder.UPDATED, filter) } else emptyList()
+		val byGenre = HashMap<String, List<Manga>>()
+		if (popularOrder != null) {
+			for (genre in rowGenres) {
+				val tag = SourceFilters.tagFor(options, genre) ?: continue
+				val list = fetch(src) { parser.getList(0, popularOrder, SourceFilters.base(parser, options, setOf(tag))) }
+				if (list.isNotEmpty()) byGenre[genre.id] = list
+			}
+		}
+		return SourceResult(src, popular, latest, byGenre)
 	}
 
 	private suspend fun fetch(src: LoadedSource, call: suspend () -> List<Manga>): List<Manga> =
@@ -147,5 +184,6 @@ class HomeViewModel : ViewModel() {
 
 	companion object {
 		private const val SOURCE_TIMEOUT = 20_000L
+		private const val GENRE_ROWS = 4
 	}
 }

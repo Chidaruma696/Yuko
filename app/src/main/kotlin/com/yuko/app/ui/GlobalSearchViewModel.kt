@@ -80,7 +80,8 @@ class GlobalSearchViewModel : ViewModel() {
 				if (!parser.filterCapabilities.isSearchSupported) return@runCatching emptyList()
 				val orders = parser.availableSortOrders
 				val order = if (SortOrder.RELEVANCE in orders) SortOrder.RELEVANCE else orders.first()
-				parser.getList(0, order, MangaListFilter(query = query))
+				val filter = if (parser.filterCapabilities.isSearchWithFiltersSupported) SourceFilters.base(parser, SourceFilters.options(src)).copy(query = query) else MangaListFilter(query = query)
+				parser.getList(0, order, filter)
 			}.getOrDefault(emptyList())
 		}.orEmpty()
 			.filterNot { AppPrefs.isHidden(it, src) }

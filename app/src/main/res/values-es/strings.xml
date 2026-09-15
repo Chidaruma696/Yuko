@@ -46,7 +46,7 @@
 	<string name="show_adult">Mostrar contenido adulto (+18)</string>
 	<string name="show_adult_summary">Desactivado por defecto. Oculta fuentes y títulos adultos del Inicio, los catálogos y la búsqueda.</string>
 	<string name="genres_you_like">Géneros que te gustan</string>
-	<string name="genres_pick_hint">Elige al menos tres. Con ellos se arma la fila "Para ti".</string>
+	<string name="genres_pick_hint">Elige al menos tres. Con ellos se arman "Para ti" y las filas por género de Inicio.</string>
 	<string name="genres_excluded">Géneros excluidos</string>
 	<string name="genres_excluded_summary">Los títulos con estas etiquetas no aparecen nunca en Inicio ni en los catálogos.</string>
 	<string name="search_genre">Buscar género</string>
