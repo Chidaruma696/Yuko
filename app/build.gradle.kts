@@ -68,6 +68,13 @@ android {
 		getByName("main") {
 			java.srcDir("src/main/kotlin")
 		}
+		getByName("test") {
+			java.srcDir("src/test/kotlin")
+		}
+	}
+
+	testOptions {
+		unitTests.isReturnDefaultValues = true
 	}
 
 	packaging {
@@ -78,6 +85,7 @@ android {
 dependencies {
 	coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
 	implementation(project(":manga-sources"))
+	testImplementation(libs.junit)
 
 	implementation(libs.androidx.core)
 	implementation(libs.androidx.appcompat)
